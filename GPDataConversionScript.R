@@ -17,13 +17,18 @@ ColumnNames <- c("PracticeName", "PracticeCode", "60to69_eligible-on-last-day",
 # Defines the path to use for data extraction
 path <- "W:\\DataAndInfo_NDT\\NationalDataTeam_Restricted\\OpenExeter\\Bowel\\GPPP_2021Oct\\Year_2010\\css_csv_export_bcs_report_Apr10.csv"
 
-dateCell <- read.csv(path, header = F, nrow = 1) #reads the first cell of the csv
-dateText <- trimws(substr(dateCell[1], nchar(dateCell[1])-6, nchar(dateCell[1])-1))
+dateCell <- read.csv(path, header = F, nrow = 1) # reads the first cell of the csv
+dateText <- trimws(substr(dateCell[1], nchar(dateCell[1])-6, nchar(dateCell[1])-1)) #extracts date information from 
 
-extractYear <- as.integer(paste0("20", substr(dateText, nchar(dateText)-1, nchar(dateText))))
-extractMonth <- match(tolower(substr(dateText, 1, nchar(dateText)-2)), tolower(month.abb))
-startDate <- as_date(ymd(paste0(extractYear, "-", extractMonth, "-", 1)))
+extractYear <- as.integer(paste0("20", substr(dateText, nchar(dateText)-1, nchar(dateText)))) #identify year
+extractMonth <- match(tolower(substr(dateText, 1, nchar(dateText)-2)), tolower(month.abb)) # identify month
+
+# Set start and end date based on extracted values
+startDate <- as_date(ymd(paste0(extractYear, "-", extractMonth, "-", 1))) 
 endDate <- ceiling_date(startDate, 'month') - days(1)
+
+# Clean up environment
+rm(dateCell, extractMonth, extractYear, dateText)
 
 # reads data into the environment for the path, skipping the first 3 rows of the CSV to get column headings - converting blank cells to NA
 dataRaw <- read.csv(path, skip = 3, na.strings = c("NA",""))
@@ -100,12 +105,19 @@ expect_equal(dataLongCheck$`2.5-year-coverage`, dataLongCheck$CoverageCalc, info
 
 rm(dataLongCheck)
 
-substring(dataLong$PracticeName[1], 1, 1)
+ws <- substring(dataLong$PracticeName[1], 1, 1)
 
 dataLong <- dataLong %>%
  # select(-Uptake, -`2.5-year-coverage`) %>%
-  mutate(PracticeName = trimws(PracticeName, whitespace = ws))
+  mutate(PracticeName = trimws(PracticeName, whitespace = ws),
+         startDate = startDate,
+         endDate = endDate) %>%
+  select(c(1:7, 15:16), everything())
+
+# Clean up environment
+rm(startDate, endDate)
 
 # Saves the data as a CSV
-write.csv(dataLong, "GPDataWranglingTestV0001.CSV")
+write.csv(dataLong, paste0("GPDataWranglingTestV00-02_", month.abb[month(startDate)], "-", year(startDate), ".CSV"))
                
+          
