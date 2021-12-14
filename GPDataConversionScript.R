@@ -5,8 +5,6 @@ library(groundhog)
 
 groundhog.library(c("dplyr", "tidyr", "janitor", "lubridate", "testthat"), groundhogDay)
 
-# CODE
-
 # Set column names for output from file
 ColumnNames <- c("PracticeName", "PracticeCode", "60to69_eligible-on-last-day", 
                  "60to69_invited-to-screening-previous-12-months", "60to69_screened-within-6-months-of-invite", 
@@ -14,8 +12,19 @@ ColumnNames <- c("PracticeName", "PracticeCode", "60to69_eligible-on-last-day",
                  "60to74_invited-to-screening-previous-12-months", "60to74_screened-within-6-months-of-invite", 
                  "60to74_screened-within-previous-30-months", "60to74_Uptake", "60to74_2.5-year-coverage") 
 
+# Identify folder containing files
+folder <- "W:\\DataAndInfo_NDT\\NationalDataTeam_Restricted\\OpenExeter\\Bowel\\GPPP_2021Oct\\Year_2010"
+
+# Find the files to have data extracted
+files <- list.files(folder, include.dirs = F, full.names = T, pattern = "\\.csv$", ignore.case = T)
+
 # Defines the path to use for data extraction
-path <- "W:\\DataAndInfo_NDT\\NationalDataTeam_Restricted\\OpenExeter\\Bowel\\GPPP_2021Oct\\Year_2010\\css_csv_export_bcs_report_Apr10.csv"
+#path <- "W:\\DataAndInfo_NDT\\NationalDataTeam_Restricted\\OpenExeter\\Bowel\\GPPP_2021Oct\\Year_2010\\css_csv_export_bcs_report_Apr10.csv"
+
+# Sets folder location for output
+destinationFolder <- "W:\\DataAndInfo_NDT\\NationalDataTeam_Restricted\\OpenExeter\\Bowel\\GPPP_2021Oct\\Year_2010\\ExtractedData\\"
+
+for (path in files) {
 
 dateCell <- read.csv(path, header = F, nrow = 1) # reads the first cell of the csv
 dateText <- trimws(substr(dateCell[1], nchar(dateCell[1])-6, nchar(dateCell[1])-1)) #extracts date information from 
@@ -115,9 +124,9 @@ dataLong <- dataLong %>%
   select(c(1:7, 15:16), everything())
 
 # Clean up environment
-rm(startDate, endDate, path, ws)
+rm(startDate, endDate, ws)
 
 # Saves the data as a CSV
-write.csv(dataLong, paste0("GPDataWranglingTestV00-02_", month.abb[month(startDate)], "-", year(startDate), ".CSV"))
-               
-          
+write.csv(dataLong, paste0(destinationFolder, "bowel-coverage-and-uptake-extracted-data_", month.abb[month(startDate)], "-", year(startDate), ".CSV"))
+
+}
