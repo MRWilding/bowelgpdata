@@ -3,7 +3,9 @@ groundhogDay <- "2021-10-01"
 
 library(groundhog)
 
-groundhog.library(c("dplyr", "tidyr", "testthat"), groundhogDay)
+groundhog.library(c("dplyr", "tidyr", "janitor", "lubridate", "testthat"), groundhogDay)
+
+# CODE
 
 # Set column names for output from file
 ColumnNames <- c("PracticeName", "PracticeCode", "60to69_eligible-on-last-day", 
@@ -64,7 +66,7 @@ errors <- bind_rows(errors, errors2) # Bind any differences together to allow co
 expect_equal(nrow(errors), 0, info = "Differences found between raw and calculated commissioning organisation lists.") # Check that there are no rows in the errors object and cause an error if there is
 
 # Clean up environment
-rm(errors, errors2, checkAggregationCalc, checkAggregationRaw, dataPCT, dataRaw)
+rm(errors, errors2, checkAggregationCalc, checkAggregationRaw, PCTData, dataRaw, dataPCT)
 
 ColNamesAll <- c("RegionName", "RegionType", "CommissioningOrganisation", "CommissioningOrganisationCode", "CommissioningOrganisationType", ColumnNames) #create a list of column name
 
@@ -77,9 +79,24 @@ dataLong <- dataFiltered %>%
   pivot_wider(names_from = Category)
 
 # Clean up environment
-rm(dataLong, ColNamesAll, ColumnNames)
+rm(dataFiltered, ColNamesAll, ColumnNames)
 
+# Check that raw data uptake and coverage match calculated values
 
+dataLongCheck <- dataLong %>%
+  mutate(UptakeCalc = round_half_up(replace_na(`screened-within-6-months-of-invite`/`invited-to-screening-previous-12-months`*100, 0), 1),
+         CoverageCalc = round_half_up(replace_na(`screened-within-previous-30-months`/`eligible-on-last-day`*100, 0), 1))
+
+expect_equal(dataLongCheck$Uptake, dataLongCheck$UptakeCalc, info = "Calculated uptake values do not match the imported values")
+expect_equal(dataLongCheck$`2.5-year-coverage`, dataLongCheck$CoverageCalc, info = "Calculated coverage values do not match the imported values")
+
+rm(dataLongCheck)
+
+substring(dataLong$PracticeName[1], 1, 1)
+
+dataLong <- dataLong %>%
+ # select(-Uptake, -`2.5-year-coverage`) %>%
+  mutate(PracticeName = trimws(PracticeName, whitespace = ws))
 
 # Saves the data as a CSV
 write.csv(dataLong, "GPDataWranglingTestV0001.CSV")
