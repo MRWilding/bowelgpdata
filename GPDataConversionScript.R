@@ -115,7 +115,7 @@ dataLong <- dataLong %>%
   select(c(1:7, 15:16), everything())
 
 # Clean up environment
-rm(startDate, endDate)
+rm(startDate, endDate, path, ws)
 
 # Saves the data as a CSV
 write.csv(dataLong, paste0("GPDataWranglingTestV00-02_", month.abb[month(startDate)], "-", year(startDate), ".CSV"))
