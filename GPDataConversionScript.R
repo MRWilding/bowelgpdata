@@ -4,6 +4,8 @@ library("janitor")
 library("lubridate")
 library("testthat")
 library("purrr")
+library("DBI")
+library("odbc")
 
 # Set column names for output from file
 ColumnNames <- c("PracticeName", "PracticeCode", "60to69_eligible-on-last-day", 
@@ -18,6 +20,8 @@ folder <- "W:\\DataAndInfo_NDT\\NationalDataTeam_Restricted\\OpenExeter\\Bowel\\
 # make a list of directories in the flder
 dirs <- list.dirs(folder, recursive = F)
 
+files <- vector()
+
 # Find the files to have data extracted
 for (dir in dirs) { # for each directory
 
@@ -29,13 +33,29 @@ for (dir in dirs) { # for each directory
 
 files <- files[!grepl("RAW_", files)] # removes any files from the process if they have been re-saved as RAW files 
 
-# Defines the path to use for data extraction
-#path <- "W:\\DataAndInfo_NDT\\NationalDataTeam_Restricted\\OpenExeter\\Bowel\\GPPP_2021Oct\\Year_2010\\css_csv_export_bcs_report_Apr10.csv"
+#******************************* ADD IN GeographyTable info
+#*
 
-# Load Commissioning Organisation list
-PCTData <- read.csv("Primary_Care_Organisations_(April_2011)_Names_and_Codes_in_England_.csv")
+#=====================================================================
+# Connect to SQL server
+#   - Note this connection is to the development database, change the database name to select a different database
 
-for (path in files) {
+con <- dbConnect(odbc::odbc(),
+                 .connection_string = "driver={ODBC Driver 17 for SQL Server};
+                                     server=SQLClusColStudy\\Study;
+                                     database=Scrn_Thresholds_Dev;
+                                     trusted_connection=yes;")
+
+OrgData <- dbGetQuery(con, "SELECT * FROM dbo.tblKPIGeographyTable") %>%
+  filter(GeographyType %in% c("CCG", "PCT")) %>%
+  select(Geography, GeographyCode, GeographyType, GeographyStartDate, GeographyEndDate) %>%
+  distinct
+
+dbDisconnect(con)
+
+count <- 1
+
+for (path in files[c(count:length(files))]) {
   
   # Identifies the directory to save the data in
   dataFolder <- dirname(path)
@@ -53,6 +73,10 @@ for (path in files) {
   startDate <- as_date(ymd(paste0(extractYear, "-", extractMonth, "-", 1))) 
   endDate <- ceiling_date(startDate, 'month') - days(1)
   
+  OrgDataFiltered <- OrgData %>%
+    filter(GeographyStartDate < endDate & (GeographyEndDate > startDate | is.na(GeographyEndDate))) %>%
+    select(-GeographyStartDate, -GeographyEndDate)
+  
   # Clean up environment
   rm(dateCell, extractMonth, extractYear, dateText)
   
@@ -60,7 +84,7 @@ for (path in files) {
   dataRaw <- read.csv(path, skip = 3, na.strings = c("NA",""))
   
   # Make updates to data to prepare for long table
-  dataPCT <- dataRaw %>%
+  dataOrg <- dataRaw %>%
     select(!map(c("X."),
                 starts_with, 
                 vars = colnames(.)) %>%
@@ -68,24 +92,24 @@ for (path in files) {
            -any_of(c("X"))) %>% # Removes Blank columns from raw data
     mutate(RegionType = names(.[1])) %>% # Sets the RegionType column to be the name of the first column
     rename(RegionName = names(.[1])) %>% # Renames the first column
-    left_join(PCTData, by= c("Organisation.Code" = "PCO11CDO")) %>%
-    rename(CommissioningOrganisation = PCO11NM) %>% # rename the column to fit the code
+    left_join(OrgDataFiltered, by= c("Organisation.Code" = "GeographyCode")) %>%
+    rename(CommissioningOrganisation = Geography,
+           CommissioningOrganisationType = GeographyType) %>% # rename the column to fit the code
     mutate(CommissioningOrganisationCode = case_when(
       !is.na(CommissioningOrganisation) ~ Organisation.Code # Add Code data where it has been match
-    ),
-    CommissioningOrganisationType = "PCT") %>% # Add organisation type column manually (to be automated in future)
-    select(c(1, 16, 18, 20:21, 2:15)) %>% # reorders the data frame to move the new columns to the organisation columns and drop unnecessary columns
+    )) %>% 
+    select(c(1, 16, 17:19, 2:15)) %>% # reorders the data frame to move the new columns to the organisation columns and drop unnecessary columns
     fill(RegionName, CommissioningOrganisation, CommissioningOrganisationCode, CommissioningOrganisationType, .direction = "down") %>% # fill the data for the region and commissioning organisation down 
     filter(!is.na(Organisation)) %>% # remove the rows where there is no Organisation (Removes the blank region rows)
     rename(Practice = Organisation, PracticeCode = Organisation.Code)
   
   # Extracts rows where the Commissioning organisation matches the GP practice column  
-  checkAggregationRaw <- dataPCT %>%
+  checkAggregationRaw <- dataOrg %>%
     filter(CommissioningOrganisationCode == PracticeCode) %>%
     select(-Practice, -PracticeCode)
   
   #Remove the rows where the commissioning organisation codes match the GP practice name (can aggregate up from GP data)
-  dataFiltered <- dataPCT %>% filter(CommissioningOrganisationCode != PracticeCode) 
+  dataFiltered <- dataOrg %>% filter(CommissioningOrganisationCode != PracticeCode) 
   
   # Calculate commissioning organisation data from GP practice data
   checkAggregationCalc <- dataFiltered %>%
@@ -93,23 +117,24 @@ for (path in files) {
     summarise_at(vars(No..of.eligible.people.on.last.day.of.review.period:X2.5.year.coverage...1), sum, na.rm = T) %>% # adds all numerical values within the groups
     group_by(.drop = "all") %>%
     # Calculates the uptake and coverage and formats to the same 1 d.p. as the raw data
-    mutate(Uptake.. = round_half_up(No..of.people.screened.within.6.months.of.invitation / No..of.people.invited.for.screening.in.previous.12.months * 100, 1), 
-           X2.5.year.coverage.. = round_half_up(No..of.people.screened.in.previous.30.months / No..of.eligible.people.on.last.day.of.review.period * 100, 1), 
-           Uptake...1 = round_half_up(No..of.people.screened.within.6.months.of.invitation.1 / No..of.people.invited.for.screening.in.previous.12.months.1 * 100, 1),
-           X2.5.year.coverage...1 = round_half_up(No..of.people.screened.in.previous.30.months.1 / No..of.eligible.people.on.last.day.of.review.period.1 * 100, 1))
+    mutate(Uptake.. = round_half_up(replace_na(No..of.people.screened.within.6.months.of.invitation / No..of.people.invited.for.screening.in.previous.12.months * 100, 0), 1), 
+           X2.5.year.coverage.. = round_half_up(replace_na(No..of.people.screened.in.previous.30.months / No..of.eligible.people.on.last.day.of.review.period * 100, 0), 1), 
+           Uptake...1 = round_half_up(replace_na(No..of.people.screened.within.6.months.of.invitation.1 / No..of.people.invited.for.screening.in.previous.12.months.1 * 100, 0), 1),
+           X2.5.year.coverage...1 = round_half_up(replace_na(No..of.people.screened.in.previous.30.months.1 / No..of.eligible.people.on.last.day.of.review.period.1 * 100, 0), 1))
+    
   
   # Check that the removed raw data rows of commissioning organisations match the calculated values for those organisations
   errors <- setdiff(checkAggregationCalc, checkAggregationRaw) # identify different rows in Calc vs Raw
   errors2 <- setdiff(checkAggregationRaw, checkAggregationCalc) # identify different rows in Raw vs Calc
   
-  if(nrow(errors) > 1 | nrow(errors2) > 1) {
+  if(nrow(errors) >= 1 | nrow(errors2) >= 1) {
     errors <- bind_rows(errors, errors2) # Bind any differences together to allow comparison by user
   }
   
   expect_equal(nrow(errors), 0, info = "Differences found between raw and calculated commissioning organisation lists.") # Check that there are no rows in the errors object and cause an error if there is
   
   # Clean up environment
-  rm(errors, errors2, checkAggregationCalc, checkAggregationRaw, dataRaw, dataPCT)
+  rm(errors, errors2, checkAggregationCalc, checkAggregationRaw, dataRaw, dataOrg)
   
   ColNamesAll <- c("RegionName", "RegionType", "CommissioningOrganisation", "CommissioningOrganisationCode", "CommissioningOrganisationType", ColumnNames) #create a list of column name
   
@@ -149,6 +174,11 @@ for (path in files) {
   
   # Clean up environment
   rm(startDate, endDate, ws)
+ 
+  counter <- paste0("File ", count, " of ", length(files), " completed: ", basename(path), "\n")
+
+  cat(counter)
   
+  count <- count + 1
 }
 
