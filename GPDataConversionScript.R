@@ -56,12 +56,9 @@ dbDisconnect(con)
 count <- 1
 
 for (path in files[c(count:length(files))]) {
-  
-  # Identifies the directory to save the data in
-  dataFolder <- dirname(path)
-  
-  # Sets folder location for output
-  destinationFolder <- paste0(dataFolder, "\\ExtractedData\\")
+
+  # Sets folder location for output - combined data folder
+  destinationFolder <- paste0(folder, "\\ExtractedData\\")
   
   dateCell <- read.csv(path, header = F, nrow = 1) # reads the first cell of the csv
   dateText <- trimws(substr(dateCell[1], nchar(dateCell[1])-6, nchar(dateCell[1])-1)) #extracts date information from 
@@ -182,3 +179,7 @@ for (path in files[c(count:length(files))]) {
   count <- count + 1
 }
 
+#clean environment
+rm(dataLong, OrgData, OrgDataFiltered, con, count, ColumnNames, counter, dataFolder, dir, dirs, filelist, files, folder, path)
+
+# pool records extracted
